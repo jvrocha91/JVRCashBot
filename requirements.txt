@@ -1,0 +1,6 @@
+python
+pip install python-binance pandas ta
+
+git add .
+git commit -m "Descrição das mudanças"
+git push origin main
