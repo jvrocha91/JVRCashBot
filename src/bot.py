@@ -19,12 +19,17 @@ BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 client = Client(BINANCE_API_KEY, BINANCE_SECRET_KEY)
 MODO_SIMULADO = True  # Se True, simula as ordens sem enviá-las para a Binance
 
-
 # Definições globais
 CRIPTO_ATUAL = None
 VALOR_OPERACAO = None
 POSICAO_ABERTA = None  # Pode ser 'long', 'short' ou None
+PRECO_ENTRADA = None  # Preço de entrada da posição aberta
+contador_operacoes = 0  # Contador de operações realizadas no dia
 
+# Parâmetros de gerenciamento de riscos
+STOP_LOSS = 0.02  # 2% de perda máxima permitida
+TAKE_PROFIT = 0.05  # 5% de lucro desejado
+LIMITE_OPERACOES = 10  # Limite de operações por dia
 
 def obter_saldo():
     """
@@ -124,11 +129,35 @@ def configurar_operacao():
         logging.info(f"\n✅ Configuração definida: {CRIPTO_ATUAL} - ${VALOR_OPERACAO:.2f} por operação.")
         return
 
+def verificar_stop_loss(preco_atual):
+    """
+    Verifica se o preço atual atingiu o stop loss.
+    """
+    global PRECO_ENTRADA, POSICAO_ABERTA
+
+    if POSICAO_ABERTA == "long" and preco_atual <= PRECO_ENTRADA * (1 - STOP_LOSS):
+        return True
+    elif POSICAO_ABERTA == "short" and preco_atual >= PRECO_ENTRADA * (1 + STOP_LOSS):
+        return True
+    return False
+
+def verificar_take_profit(preco_atual):
+    """
+    Verifica se o preço atual atingiu o take profit.
+    """
+    global PRECO_ENTRADA, POSICAO_ABERTA
+
+    if POSICAO_ABERTA == "long" and preco_atual >= PRECO_ENTRADA * (1 + TAKE_PROFIT):
+        return True
+    elif POSICAO_ABERTA == "short" and preco_atual <= PRECO_ENTRADA * (1 - TAKE_PROFIT):
+        return True
+    return False
+
 def executar_estrategia():
     """
     Executa a estratégia de trading em um loop contínuo.
     """
-    global POSICAO_ABERTA  
+    global POSICAO_ABERTA, PRECO_ENTRADA, contador_operacoes
 
     obter_saldo()
     configurar_operacao()
@@ -165,32 +194,51 @@ def executar_estrategia():
                 logging.info(f" {'✅' if short_mm else '❌'} Critério de VENDA SHORT {'atingido' if short_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}, SMA9: {sma9_atual:.2f}).")
                 logging.info(f" {'✅' if recompra_mm else '❌'} Critério de RECOMPRA SHORT {'atingido' if recompra_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}).")
 
+                # Verificar stop loss e take profit
+                if POSICAO_ABERTA and verificar_stop_loss(preco):
+                    logging.info("🚨 Stop Loss atingido!")
+                    executar_ordem("sell" if POSICAO_ABERTA == "long" else "buy", VALOR_OPERACAO / preco)
+                    POSICAO_ABERTA = None
+                    contador_operacoes += 1
+
+                elif POSICAO_ABERTA and verificar_take_profit(preco):
+                    logging.info("🎉 Take Profit atingido!")
+                    executar_ordem("sell" if POSICAO_ABERTA == "long" else "buy", VALOR_OPERACAO / preco)
+                    POSICAO_ABERTA = None
+                    contador_operacoes += 1
+
                 # 📌 Modo Long: Compra só se não houver posição aberta
-                if compra_mm and POSICAO_ABERTA is None:
+                elif compra_mm and POSICAO_ABERTA is None and contador_operacoes < LIMITE_OPERACOES:
                     logging.info("✅ Sinal de COMPRA confirmado!")
                     executar_ordem("buy", VALOR_OPERACAO / preco)
                     POSICAO_ABERTA = "long"
+                    PRECO_ENTRADA = preco
+                    contador_operacoes += 1
 
                 # 📌 Modo Long: Só vende se já tiver comprado antes
                 elif venda_mm and POSICAO_ABERTA == "long":
                     logging.info("🚨 Sinal de VENDA confirmado!")
                     executar_ordem("sell", VALOR_OPERACAO / preco)
                     POSICAO_ABERTA = None  # Fecha a posição
+                    contador_operacoes += 1
 
                 # 📌 Modo Short: Vende apenas se não houver posição aberta
-                elif short_mm and POSICAO_ABERTA is None:
+                elif short_mm and POSICAO_ABERTA is None and contador_operacoes < LIMITE_OPERACOES:
                     logging.info("🚨 Sinal de VENDA SHORT confirmado!")
                     executar_ordem("sell", VALOR_OPERACAO / preco)
                     POSICAO_ABERTA = "short"
+                    PRECO_ENTRADA = preco
+                    contador_operacoes += 1
 
                 # 📌 Modo Short: Só recompra se já tiver vendido antes
                 elif recompra_mm and POSICAO_ABERTA == "short":
                     logging.info("✅ Sinal de RECOMPRA SHORT confirmado!")
                     executar_ordem("buy", VALOR_OPERACAO / preco)
                     POSICAO_ABERTA = None  # Fecha a posição
+                    contador_operacoes += 1
 
                 else:
-                    logging.info("⚠️ Nenhum sinal de operação encontrado no momento.")
+                    logging.info("\n⚠️ Nenhum sinal de operação encontrado no momento.")
 
                 # 🔹 Final do bloco de informações
                 logging.info("====================\n")
@@ -205,7 +253,6 @@ def executar_estrategia():
 
     except KeyboardInterrupt:
         logging.info("\n🛑 Bot interrompido manualmente. Finalizando execução...")
-
 
 def executar_ordem(tipo_ordem, quantidade):
     """
