@@ -40,16 +40,18 @@ def obter_saldo():
     except Exception as e:
         logging.error(f"Erro ao obter saldo da conta: {e}")
 
-def obter_dados_historicos(limite=100):
+def obter_dados_historicos(limite=100, cripto_atual=None):
     """
     Obtém dados históricos (candlesticks) e os converte para um DataFrame Pandas.
     Retorna o DataFrame e o preço de fechamento mais recente.
     """
     try:
-        if CRIPTO_ATUAL is None:
+        if cripto_atual is None:
+            cripto_atual = CRIPTO_ATUAL
+        if cripto_atual is None:
             raise ValueError("CRIPTO_ATUAL não foi definido! Execute configurar_operacao() primeiro.")
 
-        candles = client.get_klines(symbol=CRIPTO_ATUAL, interval="5m", limit=limite)
+        candles = client.get_klines(symbol=cripto_atual, interval="5m", limit=limite)
 
         # Criar DataFrame com os dados
         df = pd.DataFrame(candles, columns=[
@@ -68,8 +70,8 @@ def obter_dados_historicos(limite=100):
         # Obter preço de fechamento mais recente
         preco_atual = df["fechamento"].iloc[-1]
 
-        logging.info(f"\n📊 Dados históricos carregados ({CRIPTO_ATUAL}, 5m)")
-        logging.info(f"💰 Preço atual de {CRIPTO_ATUAL}: ${preco_atual:.2f}")
+        logging.info(f"\n📊 Dados históricos carregados ({cripto_atual}, 5m)")
+        logging.info(f"💰 Preço atual de {cripto_atual}: ${preco_atual:.2f}")
 
         return df, preco_atual
     except Exception as e:

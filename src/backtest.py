@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 # Definições globais
 CRIPTO_ATUAL = "BTCUSDT"  # Par de negociação fixa para o backtest
 INTERVALO = "5m"  # Tempo gráfico
-VALOR_INICIAL = 10000  # Saldo inicial para o backtest
+VALOR_INICIAL = 100  # Saldo inicial para o backtest
 
 class BacktestStrategy(bt.Strategy):
     """
@@ -21,8 +21,6 @@ class BacktestStrategy(bt.Strategy):
         """
         Inicializa a estratégia no Backtrader e conecta com os dados do bot.
         """
-        df = self.datas[0].to_pandas()
-        self.trading_strategy = TradingStrategy(df)
         self.order = None  # Controle de ordens
 
     def next(self):
@@ -32,19 +30,31 @@ class BacktestStrategy(bt.Strategy):
         if self.order:
             return  # Se há uma ordem pendente, aguarde sua finalização
 
-        if self.trading_strategy.verificar_compra():
+        # Criar um DataFrame com os dados atuais para passar para a estratégia
+        df = pd.DataFrame({
+            'tempo': [self.datas[0].datetime.datetime(0)],
+            'abertura': [self.datas[0].open[0]],
+            'máxima': [self.datas[0].high[0]],
+            'mínima': [self.datas[0].low[0]],
+            'fechamento': [self.datas[0].close[0]],
+            'volume': [self.datas[0].volume[0]]
+        })
+
+        trading_strategy = TradingStrategy(df)
+
+        if trading_strategy.verificar_compra():
             self.order = self.buy()
             logging.info(f"📈 COMPRA executada - Preço: {self.datas[0].close[0]}")
 
-        elif self.trading_strategy.verificar_venda():
+        elif trading_strategy.verificar_venda():
             self.order = self.sell()
             logging.info(f"📉 VENDA executada - Preço: {self.datas[0].close[0]}")
 
-        elif self.trading_strategy.verificar_short():
+        elif trading_strategy.verificar_short():
             self.order = self.sell()
             logging.info(f"🔻 SHORT executado - Preço: {self.datas[0].close[0]}")
 
-        elif self.trading_strategy.verificar_recompra():
+        elif trading_strategy.verificar_recompra():
             self.order = self.buy()
             logging.info(f"🔺 RECOMPRA SHORT executada - Preço: {self.datas[0].close[0]}")
 
@@ -93,8 +103,12 @@ def rodar_backtest():
     # Exibir o saldo final
     logging.info(f"💰 Saldo Final: ${cerebro.broker.getvalue():.2f}")
 
+    logging.info(f"📊 Total de operações realizadas: {len(cerebro.broker.orders)}")
+
     # Exibir o gráfico da estratégia
     cerebro.plot()
+
+    
 
 if __name__ == "__main__":
     rodar_backtest()
