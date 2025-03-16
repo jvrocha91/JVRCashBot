@@ -1,3 +1,4 @@
+from strategies.strategy import TradingStrategy
 import pandas as pd
 from binance.client import Client
 from dotenv import load_dotenv
@@ -11,6 +12,10 @@ BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 # Conectar à Binance API
 client = Client(BINANCE_API_KEY, BINANCE_SECRET_KEY)
 
+# Definições globais para armazenar as escolhas do usuário
+CRIPTO_ATUAL = None
+VALOR_OPERACAO = None
+
 def obter_saldo():
     """
     Obtém e exibe o saldo disponível na conta.
@@ -21,7 +26,7 @@ def obter_saldo():
         ativos = []
         for asset in saldo["balances"]:
             quantidade = float(asset["free"])
-            if quantidade > 0:
+            if quantidade > 1:
                 ativos.append(f"{asset['asset']}: {quantidade:.6f}")
         
         if ativos:
@@ -37,6 +42,8 @@ def configurar_operacao():
     Permite que o usuário escolha a criptomoeda e o valor que deseja negociar.
     Após escolher a criptomoeda, ele pode confirmar ou voltar ao menu inicial.
     """
+    global CRIPTO_ATUAL, VALOR_OPERACAO  # Agora essas variáveis são globais
+
     while True:
         print("\n📌 SELECIONE A CRIPTOMOEDA PARA OPERAR:")
         print("1 - BTCUSDT (Bitcoin)")
@@ -47,20 +54,20 @@ def configurar_operacao():
         escolha = input("\nDigite o número da opção desejada: ")
 
         if escolha == "1":
-            cripto = "BTCUSDT"
+            CRIPTO_ATUAL = "BTCUSDT"
         elif escolha == "2":
-            cripto = "ETHUSDT"
+            CRIPTO_ATUAL = "ETHUSDT"
         elif escolha == "3":
-            cripto = "SOLUSDT"
+            CRIPTO_ATUAL = "SOLUSDT"
         elif escolha == "4":
-            cripto = input("Digite o par de negociação desejado (ex: ADAUSDT, XRPUSDT): ").upper()
+            CRIPTO_ATUAL = input("Digite o par de negociação desejado (ex: ADAUSDT, XRPUSDT): ").upper()
         else:
             print("❌ Opção inválida! Tente novamente.")
             continue  # Volta ao menu sem continuar
 
         # Confirmação antes de prosseguir
         while True:
-            print(f"\n🔹 Você escolheu: {cripto}")
+            print(f"\n🔹 Você escolheu: {CRIPTO_ATUAL}")
             print("1 - CONFIRMAR")
             print("2 - VOLTAR AO MENU INICIAL")
 
@@ -76,20 +83,16 @@ def configurar_operacao():
 
         while True:
             try:
-                valor = float(input(f"\n💰 Digite o valor que deseja investir em cada operação ({cripto}): "))
-                if valor > 0:
+                VALOR_OPERACAO = float(input(f"\n💰 Digite o valor que deseja investir em cada operação ({CRIPTO_ATUAL}): "))
+                if VALOR_OPERACAO > 0:
                     break
                 else:
                     print("❌ O valor deve ser maior que 0.")
             except ValueError:
                 print("❌ Entrada inválida. Digite um número válido.")
 
-        print(f"\n✅ Configuração definida: {cripto} - ${valor:.2f} por operação.\n")
-        return cripto, valor  # Retorna as configurações
-
-# Executar a função de saldo antes de escolher a cripto
-obter_saldo()
-CRIPTO_ATUAL, VALOR_OPERACAO = configurar_operacao()
+        print(f"\n✅ Configuração definida: {CRIPTO_ATUAL} - ${VALOR_OPERACAO:.2f} por operação.\n")
+        return
 
 def obter_dados_historicos(limite=100):
     """
@@ -97,6 +100,9 @@ def obter_dados_historicos(limite=100):
     Retorna o DataFrame e o preço de fechamento mais recente.
     """
     try:
+        if CRIPTO_ATUAL is None:
+            raise ValueError("CRIPTO_ATUAL não foi definido! Execute configurar_operacao() primeiro.")
+
         candles = client.get_klines(symbol=CRIPTO_ATUAL, interval="5m", limit=limite)
 
         # Criar DataFrame com os dados
@@ -125,8 +131,22 @@ def obter_dados_historicos(limite=100):
         print(f"Erro ao buscar dados do mercado: {e}")
         return None, None
 
-# Executar função para obter dados históricos
-df, preco = obter_dados_historicos(10)
+# Executar a lógica principal
+obter_saldo()
+configurar_operacao()  # Agora as variáveis CRIPTO_ATUAL e VALOR_OPERACAO são definidas antes do próximo passo
+df, preco = obter_dados_historicos(100)
 
-# Exibir os últimos 5 candles
-print(df[["tempo", "abertura", "máxima", "mínima", "fechamento", "volume"]].tail(5))
+# Aplicar a estratégia
+if df is not None:
+    strategy = TradingStrategy(df)
+
+    if strategy.verificar_compra():
+        print("📈 SINAL DE COMPRA DETECTADO!")
+    elif strategy.verificar_venda():
+        print("📉 SINAL DE VENDA DETECTADO!")
+    elif strategy.verificar_short():
+        print("🔻 SINAL DE VENDA SHORT DETECTADO!")
+    elif strategy.verificar_recompra():
+        print("🔺 SINAL DE RECOMPRA SHORT DETECTADO!")
+    else:
+        print("🔎 Nenhum sinal de operação encontrado no momento.")
