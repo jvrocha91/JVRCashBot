@@ -4,6 +4,8 @@ from binance.client import Client
 from dotenv import load_dotenv
 import os
 import logging
+import time  
+import sys
 
 # Configurar logging sem timestamp e sem nível de log e sem nível de log
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -15,10 +17,14 @@ BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 
 # Conectar à Binance API
 client = Client(BINANCE_API_KEY, BINANCE_SECRET_KEY)
+MODO_SIMULADO = True  # Se True, simula as ordens sem enviá-las para a Binance
+
 
 # Definições globais
 CRIPTO_ATUAL = None
 VALOR_OPERACAO = None
+POSICAO_ABERTA = None  # Pode ser 'long', 'short' ou None
+
 
 def obter_saldo():
     """
@@ -120,47 +126,126 @@ def configurar_operacao():
 
 def executar_estrategia():
     """
-    Executa a lógica principal da estratégia de trading.
+    Executa a estratégia de trading em um loop contínuo.
     """
+    global POSICAO_ABERTA  
+
     obter_saldo()
     configurar_operacao()
 
-    df, preco = obter_dados_historicos(100)
+    logging.info("\n🚀 Bot iniciado. Monitorando o mercado...")
 
-    if df is not None:
-        strategy = TradingStrategy(df)
+    try:
+        while True:  # Loop contínuo
+            df, preco = obter_dados_historicos(100)
 
-        logging.info("\n📊 Indicadores Atuais:")
-        logging.info(f"SMA9: {df['SMA_9'].iloc[-1]:.2f} | SMA21: {df['SMA_21'].iloc[-1]:.2f}")
-        logging.info(f"EMA100: {df['EMA_100'].iloc[-1]:.2f} | EMA200: {df['EMA_200'].iloc[-1]:.2f}")
-        logging.info(f"RSI Atual: {df['RSI'].iloc[-1]:.2f}")
+            if df is not None:
+                strategy = TradingStrategy(df)
 
-        logging.info("\n⚡ Verificação dos Critérios:")
+                # 🔹 Início do bloco de informações
+                logging.info("\n====================")
+                logging.info("📊 Indicadores Atuais:")
+                logging.info(f"SMA9: {df['SMA_9'].iloc[-1]:.2f} | SMA21: {df['SMA_21'].iloc[-1]:.2f}")
+                logging.info(f"EMA100: {df['EMA_100'].iloc[-1]:.2f} | EMA200: {df['EMA_200'].iloc[-1]:.2f}")
+                logging.info(f"RSI Atual: {df['RSI'].iloc[-1]:.2f}")
 
-        compra_mm = strategy.verificar_compra()
-        venda_mm = strategy.verificar_venda()
-        short_mm = strategy.verificar_short()
-        recompra_mm = strategy.verificar_recompra()
+                logging.info("\n⚡ Verificação dos Critérios:")
 
-        rsi_atual = df["RSI"].iloc[-1]
-        sma9_atual = df["SMA_9"].iloc[-1]
-        sma21_atual = df["SMA_21"].iloc[-1]
+                compra_mm = strategy.verificar_compra()
+                venda_mm = strategy.verificar_venda()
+                short_mm = strategy.verificar_short()
+                recompra_mm = strategy.verificar_recompra()
 
-        logging.info(f" {'✅' if compra_mm else '❌'} Critério de COMPRA {'atingido' if compra_mm else 'NÃO atingido'} (SMA9: {sma9_atual:.2f}, SMA21: {sma21_atual:.2f}, RSI: {rsi_atual:.2f}).")
-        logging.info(f" {'✅' if venda_mm else '❌'} Critério de VENDA {'atingido' if venda_mm else 'NÃO atingido'} (RSI > 70 ou SMA9 cruzou abaixo da SMA21).")
-        logging.info(f" {'✅' if short_mm else '❌'} Critério de VENDA SHORT {'atingido' if short_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}, SMA9: {sma9_atual:.2f}).")
-        logging.info(f" {'✅' if recompra_mm else '❌'} Critério de RECOMPRA SHORT {'atingido' if recompra_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}).")
+                rsi_atual = df["RSI"].iloc[-1]
+                sma9_atual = df["SMA_9"].iloc[-1]
+                sma21_atual = df["SMA_21"].iloc[-1]
 
-        if compra_mm:
-            logging.info("✅ Sinal de COMPRA confirmado!")
-        elif venda_mm:
-            logging.info("🚨 Sinal de VENDA confirmado!")
-        elif short_mm:
-            logging.info("🚨 Sinal de VENDA SHORT confirmado!")
-        elif recompra_mm:
-            logging.info("✅ Sinal de RECOMPRA SHORT confirmado!")
-        else:
-            logging.info("⚠️ Nenhum sinal de operação encontrado no momento.")
+                logging.info(f" {'✅' if compra_mm else '❌'} Critério de COMPRA {'atingido' if compra_mm else 'NÃO atingido'} (SMA9: {sma9_atual:.2f}, SMA21: {sma21_atual:.2f}, RSI: {rsi_atual:.2f}).")
+                logging.info(f" {'✅' if venda_mm else '❌'} Critério de VENDA {'atingido' if venda_mm else 'NÃO atingido'} (RSI > 70 ou SMA9 cruzou abaixo da SMA21).")
+                logging.info(f" {'✅' if short_mm else '❌'} Critério de VENDA SHORT {'atingido' if short_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}, SMA9: {sma9_atual:.2f}).")
+                logging.info(f" {'✅' if recompra_mm else '❌'} Critério de RECOMPRA SHORT {'atingido' if recompra_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}).")
+
+                # 📌 Modo Long: Compra só se não houver posição aberta
+                if compra_mm and POSICAO_ABERTA is None:
+                    logging.info("✅ Sinal de COMPRA confirmado!")
+                    executar_ordem("buy", VALOR_OPERACAO / preco)
+                    POSICAO_ABERTA = "long"
+
+                # 📌 Modo Long: Só vende se já tiver comprado antes
+                elif venda_mm and POSICAO_ABERTA == "long":
+                    logging.info("🚨 Sinal de VENDA confirmado!")
+                    executar_ordem("sell", VALOR_OPERACAO / preco)
+                    POSICAO_ABERTA = None  # Fecha a posição
+
+                # 📌 Modo Short: Vende apenas se não houver posição aberta
+                elif short_mm and POSICAO_ABERTA is None:
+                    logging.info("🚨 Sinal de VENDA SHORT confirmado!")
+                    executar_ordem("sell", VALOR_OPERACAO / preco)
+                    POSICAO_ABERTA = "short"
+
+                # 📌 Modo Short: Só recompra se já tiver vendido antes
+                elif recompra_mm and POSICAO_ABERTA == "short":
+                    logging.info("✅ Sinal de RECOMPRA SHORT confirmado!")
+                    executar_ordem("buy", VALOR_OPERACAO / preco)
+                    POSICAO_ABERTA = None  # Fecha a posição
+
+                else:
+                    logging.info("⚠️ Nenhum sinal de operação encontrado no momento.")
+
+                # 🔹 Final do bloco de informações
+                logging.info("====================\n")
+
+            # ⏳ Aguarda 60 segundos com contagem regressiva
+            for i in range(60, 0, -1):  
+                sys.stdout.write(f"\r⏳ Próxima verificação em {i} segundos...")  
+                sys.stdout.flush()
+                time.sleep(1)
+
+            print("\n")  # Pula linha ao final da contagem regressiva
+
+    except KeyboardInterrupt:
+        logging.info("\n🛑 Bot interrompido manualmente. Finalizando execução...")
+
+
+def executar_ordem(tipo_ordem, quantidade):
+    """
+    Executa uma ordem de compra ou venda na Binance ou simula a operação.
+    
+    :param tipo_ordem: 'buy' para compra, 'sell' para venda
+    :param quantidade: Quantidade de moeda a ser comprada ou vendida
+    """
+    try:
+        if tipo_ordem not in ["buy", "sell"]:
+            raise ValueError("Tipo de ordem inválido. Use 'buy' ou 'sell'.")
+
+        if MODO_SIMULADO:
+            logging.info(f"🟡 [SIMULADO] Ordem de {tipo_ordem.upper()} enviada para {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
+            return {"status": "simulado", "tipo": tipo_ordem, "quantidade": quantidade}
+
+        # Verifica saldo antes da compra real
+        saldo = client.get_asset_balance(asset=CRIPTO_ATUAL[:-4])  # Remove "USDT" do final
+        saldo_disponivel = float(saldo["free"]) if saldo else 0
+
+        if tipo_ordem == "buy":
+            if saldo_disponivel < quantidade:
+                logging.error(f"❌ Saldo insuficiente! Disponível: {saldo_disponivel}, Necessário: {quantidade}")
+                return None
+            logging.info(f"📈 Enviando ordem de COMPRA: {CRIPTO_ATUAL} - {quantidade}")
+
+        elif tipo_ordem == "sell":
+            logging.info(f"📉 Enviando ordem de VENDA: {CRIPTO_ATUAL} - {quantidade}")
+
+        # Executa a ordem na Binance
+        ordem = client.order_market(symbol=CRIPTO_ATUAL, side=tipo_ordem.upper(), quantity=quantidade)
+
+        # Confirma execução da ordem
+        logging.info(f"✅ Ordem de {tipo_ordem.upper()} executada com sucesso!")
+        logging.info(f"📌 Detalhes da ordem: {ordem}")
+
+        return ordem
+    except Exception as e:
+        logging.error(f"❌ Erro ao executar ordem: {e}")
+        return None
 
 # Executar a lógica principal
 if __name__ == "__main__":
