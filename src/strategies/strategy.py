@@ -36,54 +36,57 @@ class TradingStrategy:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
+    def verificar_criterios(self, rsi_limite, sma_condicao, ema_condicao):
+        """
+        Verifica se os critérios de RSI, SMA e EMA são atendidos.
+        :param rsi_limite: Limite do RSI para a condição.
+        :param sma_condicao: Condição para as Médias Móveis Simples.
+        :param ema_condicao: Condição para a Média Móvel Exponencial.
+        :return: Booleano indicando se os critérios são atendidos.
+        """
+        ultima_linha = self.df.iloc[-1]
+        return (
+            sma_condicao(ultima_linha["SMA_9"], ultima_linha["SMA_21"]) and
+            ema_condicao(ultima_linha["fechamento"], ultima_linha["EMA_100"]) and
+            rsi_limite(ultima_linha["RSI"])
+        )
+
     def verificar_compra(self):
         """
         Verifica se há sinal de compra no modo Long.
         """
-        ultima_linha = self.df.iloc[-1]
-        if (
-            ultima_linha["RSI"] < 35
-            and ultima_linha["SMA_9"] > ultima_linha["SMA_21"]
-            and ultima_linha["fechamento"] > ultima_linha["EMA_100"]
-        ):
-            return True
-        return False
+        return self.verificar_criterios(
+            lambda rsi: rsi < 35,
+            lambda sma9, sma21: sma9 > sma21,
+            lambda fechamento, ema100: fechamento > ema100
+        )
 
     def verificar_venda(self):
         """
         Verifica se há sinal de venda no modo Long.
         """
         ultima_linha = self.df.iloc[-1]
-        if (
-            ultima_linha["RSI"] > 70
-            or ultima_linha["SMA_9"] < ultima_linha["SMA_21"]
-        ):
-            if ultima_linha["fechamento"] > ultima_linha["EMA_200"]:  # Filtro adicional
-                return True
-        return False
+        return (
+            (ultima_linha["RSI"] > 70 or ultima_linha["SMA_9"] < ultima_linha["SMA_21"]) and
+            ultima_linha["fechamento"] > ultima_linha["EMA_200"]
+        )
 
     def verificar_short(self):
         """
         Verifica se há sinal de entrada vendida (Short Selling).
         """
-        ultima_linha = self.df.iloc[-1]
-        if (
-            ultima_linha["RSI"] > 70
-            and ultima_linha["SMA_9"] < ultima_linha["SMA_21"]
-            and ultima_linha["fechamento"] < ultima_linha["EMA_100"]
-        ):
-            return True
-        return False
+        return self.verificar_criterios(
+            lambda rsi: rsi > 70,
+            lambda sma9, sma21: sma9 < sma21,
+            lambda fechamento, ema100: fechamento < ema100
+        )
 
     def verificar_recompra(self):
         """
         Verifica se há sinal para recomprar no Short Selling.
         """
         ultima_linha = self.df.iloc[-1]
-        if (
-            ultima_linha["RSI"] < 35
-            or ultima_linha["SMA_9"] > ultima_linha["SMA_21"]
-        ):
-            if ultima_linha["fechamento"] < ultima_linha["EMA_200"]:  # Filtro adicional
-                return True
-        return False
+        return (
+            (ultima_linha["RSI"] < 35 or ultima_linha["SMA_9"] > ultima_linha["SMA_21"]) and
+            ultima_linha["fechamento"] < ultima_linha["EMA_200"]
+        )
