@@ -7,8 +7,16 @@ import logging
 import time  
 import sys
 
-# Configurar logging sem timestamp e sem nível de log e sem nível de log
+# Configurar logging para exibir informações gerais
 logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+# Configurar logging para registrar operações em um arquivo separado
+operacoes_logger = logging.getLogger("operacoes")
+operacoes_handler = logging.FileHandler("operacoes.log", mode="a", encoding="utf-8")
+operacoes_formatter = logging.Formatter('%(asctime)s - %(message)s')
+operacoes_handler.setFormatter(operacoes_formatter)
+operacoes_logger.addHandler(operacoes_handler)
+operacoes_logger.setLevel(logging.INFO)
 
 # Carregar as chaves da Binance do arquivo .env
 load_dotenv()
@@ -17,7 +25,7 @@ BINANCE_SECRET_KEY = os.getenv("BINANCE_SECRET_KEY")
 
 # Conectar à Binance API
 client = Client(BINANCE_API_KEY, BINANCE_SECRET_KEY)
-MODO_SIMULADO = True  # Se True, simula as ordens sem enviá-las para a Binance
+MODO_SIMULADO = False  # Se True, simula as ordens sem enviá-las para a Binance
 
 # Definições globais
 CRIPTO_ATUAL = None
@@ -267,6 +275,7 @@ def executar_ordem(tipo_ordem, quantidade):
 
         if MODO_SIMULADO:
             logging.info(f"🟡 [SIMULADO] Ordem de {tipo_ordem.upper()} enviada para {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
+            operacoes_logger.info(f"[SIMULADO] {tipo_ordem.upper()} - {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
             return {"status": "simulado", "tipo": tipo_ordem, "quantidade": quantidade}
 
         # Verifica saldo antes da compra real
@@ -288,6 +297,10 @@ def executar_ordem(tipo_ordem, quantidade):
         # Confirma execução da ordem
         logging.info(f"✅ Ordem de {tipo_ordem.upper()} executada com sucesso!")
         logging.info(f"📌 Detalhes da ordem: {ordem}")
+
+        # Registrar a operação no arquivo de log
+        preco_executado = ordem["fills"][0]["price"] if "fills" in ordem and ordem["fills"] else "N/A"
+        operacoes_logger.info(f"{tipo_ordem.upper()} - {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f} - Preço: {preco_executado}")
 
         return ordem
     except Exception as e:

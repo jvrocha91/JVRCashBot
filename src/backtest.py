@@ -22,6 +22,7 @@ class BacktestStrategy(bt.Strategy):
         Inicializa a estratégia no Backtrader e conecta com os dados do bot.
         """
         self.order = None  # Controle de ordens
+        self.dataclose = self.datas[0].close
 
     def notify_order(self, order):
         """
@@ -54,19 +55,19 @@ class BacktestStrategy(bt.Strategy):
         trading_strategy = TradingStrategy(df)
 
         if trading_strategy.verificar_compra():
-            self.order = self.buy(size=0.01)  # Ajuste o tamanho da ordem para uma fração do saldo
+            self.order = self.buy(size=0.1)  # Ajuste o tamanho da ordem para uma fração do saldo
             logging.info(f"📈 COMPRA enviada - Preço: {self.datas[0].close[0]:.2f}")
 
         elif trading_strategy.verificar_venda():
-            self.order = self.sell(size=0.01)
+            self.order = self.sell(size=0.1)
             logging.info(f"📉 VENDA enviada - Preço: {self.datas[0].close[0]:.2f}")
 
         elif trading_strategy.verificar_short():
-            self.order = self.sell(size=0.01)
+            self.order = self.sell(size=0.1)
             logging.info(f"🔻 SHORT enviado - Preço: {self.datas[0].close[0]:.2f}")
 
         elif trading_strategy.verificar_recompra():
-            self.order = self.buy(size=0.01)
+            self.order = self.buy(size=0.1)
             logging.info(f"🔺 RECOMPRA SHORT enviada - Preço: {self.datas[0].close[0]:.2f}")
 
 # Função para converter os dados históricos para o formato do Backtrader
