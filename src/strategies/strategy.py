@@ -56,7 +56,7 @@ class TradingStrategy:
         Verifica se há sinal de compra no modo Long.
         """
         return self.verificar_criterios(
-            lambda rsi: rsi < 35,   # RSI abaixo de 35
+            lambda rsi: rsi < 40,   # RSI abaixo de 40
             lambda sma9, sma21: sma9 > sma21,  # SMA9 cruzando acima da SMA21
             lambda fechamento, ema100: fechamento > ema100  # Preço acima da EMA100
         )
@@ -67,7 +67,7 @@ class TradingStrategy:
         """
         ultima_linha = self.df.iloc[-1]
         return (
-            ultima_linha["RSI"] > 70 or  # RSI acima de 70
+            ultima_linha["RSI"] > 65 or  # RSI acima de 65
             ultima_linha["SMA_9"] < ultima_linha["SMA_21"]  # SMA9 cruzando abaixo da SMA21
         )
 
@@ -76,7 +76,7 @@ class TradingStrategy:
         Verifica se há sinal de entrada vendida (Short Selling).
         """
         return self.verificar_criterios(
-            lambda rsi: rsi > 70,   # RSI acima de 70
+            lambda rsi: rsi > 65,   # RSI acima de 65
             lambda sma9, sma21: sma9 < sma21,  # SMA9 cruzando abaixo da SMA21
             lambda fechamento, ema100: fechamento < ema100  # Preço abaixo da EMA100
         )
@@ -87,6 +87,6 @@ class TradingStrategy:
         """
         ultima_linha = self.df.iloc[-1]
         return (
-            ultima_linha["RSI"] < 35 or  # RSI abaixo de 35
+            ultima_linha["RSI"] < 40 or  # RSI abaixo de 40
             ultima_linha["SMA_9"] > ultima_linha["SMA_21"]  # SMA9 cruzando acima da SMA21
         )
