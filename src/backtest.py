@@ -17,12 +17,13 @@ class BacktestStrategy(bt.Strategy):
     Estratégia para backtesting baseada na implementação do TradingStrategy.
     """
 
-    def __init__(self):
+    def __init__(self, strategy_class):
         """
         Inicializa a estratégia no Backtrader e conecta com os dados do bot.
         """
         self.order = None  # Controle de ordens
         self.dataclose = self.datas[0].close
+        self.strategy_class = strategy_class  # Classe da estratégia personalizada
 
     def notify_order(self, order):
         """
@@ -52,7 +53,8 @@ class BacktestStrategy(bt.Strategy):
             'volume': [self.datas[0].volume[0]]
         })
 
-        trading_strategy = TradingStrategy(df)
+        # Instanciar a estratégia personalizada
+        trading_strategy = self.strategy_class(df)
 
         if trading_strategy.verificar_compra():
             self.order = self.buy(size=0.1)  # Ajuste o tamanho da ordem para uma fração do saldo
@@ -82,7 +84,7 @@ def preparar_dados_backtrader(df):
     df.index = pd.to_datetime(df.index)
     return df
 
-def rodar_backtest():
+def rodar_backtest(strategy_class):
     """
     Executa o backtest usando os dados históricos da Binance e a estratégia implementada.
     """
@@ -102,7 +104,7 @@ def rodar_backtest():
 
     # Inicializar o backtest
     cerebro = bt.Cerebro()
-    cerebro.addstrategy(BacktestStrategy)
+    cerebro.addstrategy(BacktestStrategy, strategy_class=strategy_class)
     cerebro.adddata(data)
     cerebro.broker.set_cash(VALOR_INICIAL)
     cerebro.broker.setcommission(commission=0.001)  # Taxa de 0.1% por trade
@@ -119,4 +121,5 @@ def rodar_backtest():
     cerebro.plot()
 
 if __name__ == "__main__":
-    rodar_backtest()
+    # Substitua `TradingStrategy` pela nova estratégia implementada em strategy.py
+    rodar_backtest(TradingStrategy)

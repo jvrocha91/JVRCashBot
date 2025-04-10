@@ -35,7 +35,7 @@ PRECO_ENTRADA = None  # Preço de entrada da posição aberta
 contador_operacoes = 0  # Contador de operações realizadas no dia
 
 # Parâmetros de gerenciamento de riscos
-STOP_LOSS = 0.02  # 2% de perda máxima permitida
+STOP_LOSS = 0.05  # 5% de perda máxima permitida
 TAKE_PROFIT = 0.05  # 5% de lucro desejado
 LIMITE_OPERACOES = 10  # Limite de operações por dia
 
@@ -86,6 +86,12 @@ def obter_dados_historicos(limite=100, cripto_atual=None):
             ["abertura", "máxima", "mínima", "fechamento", "volume"]
         ].astype(float)
 
+        # Calcular EMA 100
+        df["EMA_100"] = df["fechamento"].ewm(span=100, adjust=False).mean()
+
+        # Calcular RSI
+        df["RSI"] = calcular_rsi(df["fechamento"], window=14)
+
         # Obter preço de fechamento mais recente
         preco_atual = df["fechamento"].iloc[-1]
 
@@ -96,6 +102,17 @@ def obter_dados_historicos(limite=100, cripto_atual=None):
     except Exception as e:
         logging.error(f"Erro ao buscar dados do mercado: {e}")
         return None, None
+
+def calcular_rsi(serie, window=14):
+    """
+    Calcula o RSI (Índice de Força Relativa).
+    """
+    delta = serie.diff(1)
+    ganho = (delta.where(delta > 0, 0)).rolling(window=window).mean()
+    perda = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
+    rs = ganho / perda
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 def configurar_operacao():
     """
@@ -177,30 +194,57 @@ def executar_estrategia():
             df, preco = obter_dados_historicos(100)
 
             if df is not None:
-                strategy = TradingStrategy(df)
+                strategy = TradingStrategy(df, PRECO_ENTRADA)
 
                 # 🔹 Início do bloco de informações
                 logging.info("\n====================")
                 logging.info("📊 Indicadores Atuais:")
-                logging.info(f"SMA9: {df['SMA_9'].iloc[-1]:.2f} | SMA21: {df['SMA_21'].iloc[-1]:.2f}")
-                logging.info(f"EMA100: {df['EMA_100'].iloc[-1]:.2f} | EMA200: {df['EMA_200'].iloc[-1]:.2f}")
                 logging.info(f"RSI Atual: {df['RSI'].iloc[-1]:.2f}")
 
                 logging.info("\n⚡ Verificação dos Critérios:")
 
+                # Obter valores da EMA 100 e preço atual
+                ema_100_atual = df["EMA_100"].iloc[-1]
+                preco_atual = df["fechamento"].iloc[-1]
+
+                # Determinar a tendência com base na EMA 100
+                if preco_atual > ema_100_atual:
+                    tendencia = "Tendência de ALTA (Preço acima da EMA 100)"
+                else:
+                    tendencia = "Tendência de BAIXA (Preço abaixo da EMA 100)"
+
+                # Exibir informações da EMA 100 e tendência no terminal
+                logging.info(f"📈 EMA 100 Atual: {ema_100_atual:.2f}")
+                logging.info(f"📊 {tendencia}")
+
+                # Verificar critérios de compra, venda, short e recompra
                 compra_mm = strategy.verificar_compra()
                 venda_mm = strategy.verificar_venda()
                 short_mm = strategy.verificar_short()
                 recompra_mm = strategy.verificar_recompra()
 
                 rsi_atual = df["RSI"].iloc[-1]
-                sma9_atual = df["SMA_9"].iloc[-1]
-                sma21_atual = df["SMA_21"].iloc[-1]
 
-                logging.info(f" {'✅' if compra_mm else '❌'} Critério de COMPRA {'atingido' if compra_mm else 'NÃO atingido'} (SMA9: {sma9_atual:.2f}, SMA21: {sma21_atual:.2f}, RSI: {rsi_atual:.2f}).")
-                logging.info(f" {'✅' if venda_mm else '❌'} Critério de VENDA {'atingido' if venda_mm else 'NÃO atingido'} (RSI > 70 ou SMA9 cruzou abaixo da SMA21).")
-                logging.info(f" {'✅' if short_mm else '❌'} Critério de VENDA SHORT {'atingido' if short_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}, SMA9: {sma9_atual:.2f}).")
-                logging.info(f" {'✅' if recompra_mm else '❌'} Critério de RECOMPRA SHORT {'atingido' if recompra_mm else 'NÃO atingido'} (RSI: {rsi_atual:.2f}).")
+                # Exibir os critérios e resultados no terminal
+                logging.info(f" {'✅' if compra_mm else '❌'} Critério de COMPRA {'atingido' if compra_mm else 'NÃO atingido'}:")
+                logging.info(f"    - Preço atual acima da EMA 100: {preco_atual > ema_100_atual}")
+                logging.info(f"    - Preço atual 0,3% acima do menor preço: {strategy.lowest_price:.2f}")
+                logging.info(f"    - RSI < 35: {rsi_atual:.2f}")
+
+                logging.info(f" {'✅' if venda_mm else '❌'} Critério de VENDA {'atingido' if venda_mm else 'NÃO atingido'}:")
+                logging.info(f"    - Preço atual acima da EMA 100: {preco_atual > ema_100_atual}")
+                logging.info(f"    - Lucro mínimo de 0,05% atingido: {strategy.preco_entrada:.2f}" if strategy.preco_entrada is not None else "    - Lucro mínimo de 0,05% atingido: N/A")
+                logging.info(f"    - RSI > 70: {rsi_atual:.2f}")
+
+                logging.info(f" {'✅' if short_mm else '❌'} Critério de VENDA SHORT {'atingido' if short_mm else 'NÃO atingido'}:")
+                logging.info(f"    - Preço atual abaixo da EMA 100: {preco_atual < ema_100_atual}")
+                logging.info(f"    - Preço atual 0,3% abaixo do maior preço: {strategy.highest_price:.2f}")
+                logging.info(f"    - RSI > 70: {rsi_atual:.2f}")
+
+                logging.info(f" {'✅' if recompra_mm else '❌'} Critério de RECOMPRA SHORT {'atingido' if recompra_mm else 'NÃO atingido'}:")
+                logging.info(f"    - Preço atual abaixo da EMA 100: {preco_atual < ema_100_atual}")
+                logging.info(f"    - Lucro mínimo de 0,05% atingido: {strategy.preco_entrada:.2f}" if strategy.preco_entrada is not None else "    - Lucro mínimo de 0,05% atingido: N/A")
+                logging.info(f"    - RSI < 35: {rsi_atual:.2f}")
 
                 # Verificar stop loss e take profit
                 if POSICAO_ABERTA and verificar_stop_loss(preco):
@@ -233,7 +277,7 @@ def executar_estrategia():
                 # 📌 Modo Short: Vende apenas se não houver posição aberta
                 elif short_mm and POSICAO_ABERTA is None and contador_operacoes < LIMITE_OPERACOES:
                     logging.info("🚨 Sinal de VENDA SHORT confirmado!")
-                    executar_ordem("sell", VALOR_OPERACAO / preco)
+                    executar_ordem("short_sell", VALOR_OPERACAO / preco, preco_atual=preco)
                     POSICAO_ABERTA = "short"
                     PRECO_ENTRADA = preco
                     contador_operacoes += 1
@@ -241,7 +285,7 @@ def executar_estrategia():
                 # 📌 Modo Short: Só recompra se já tiver vendido antes
                 elif recompra_mm and POSICAO_ABERTA == "short":
                     logging.info("✅ Sinal de RECOMPRA SHORT confirmado!")
-                    executar_ordem("buy", VALOR_OPERACAO / preco)
+                    executar_ordem("short_cover", VALOR_OPERACAO / preco)
                     POSICAO_ABERTA = None  # Fecha a posição
                     contador_operacoes += 1
 
@@ -262,34 +306,72 @@ def executar_estrategia():
     except KeyboardInterrupt:
         logging.info("\n🛑 Bot interrompido manualmente. Finalizando execução...")
 
-def executar_ordem(tipo_ordem, quantidade):
+def executar_ordem(tipo_ordem, quantidade, preco_atual=None):
     """
-    Executa uma ordem de compra ou venda na Binance ou simula a operação.
+    Executa uma ordem de compra, venda, venda short ou recompra short na Binance ou simula a operação.
     
-    :param tipo_ordem: 'buy' para compra, 'sell' para venda
+    :param tipo_ordem: 'buy', 'sell', 'short_sell', ou 'short_cover'
     :param quantidade: Quantidade de moeda a ser comprada ou vendida
+    :param preco_atual: Preço atual da criptomoeda (necessário para venda short)
     """
     try:
-        if tipo_ordem not in ["buy", "sell"]:
-            raise ValueError("Tipo de ordem inválido. Use 'buy' ou 'sell'.")
+        if tipo_ordem not in ["buy", "sell", "short_sell", "short_cover"]:
+            raise ValueError("Tipo de ordem inválido. Use 'buy', 'sell', 'short_sell' ou 'short_cover'.")
 
         if MODO_SIMULADO:
             logging.info(f"🟡 [SIMULADO] Ordem de {tipo_ordem.upper()} enviada para {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
             operacoes_logger.info(f"[SIMULADO] {tipo_ordem.upper()} - {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
             return {"status": "simulado", "tipo": tipo_ordem, "quantidade": quantidade}
 
-        # Verifica saldo antes da compra real
-        saldo = client.get_asset_balance(asset=CRIPTO_ATUAL[:-4])  # Remove "USDT" do final
-        saldo_disponivel = float(saldo["free"]) if saldo else 0
-
+        # Verificação de saldo diferenciada para cada tipo de operação
         if tipo_ordem == "buy":
-            if saldo_disponivel < quantidade:
-                logging.error(f"❌ Saldo insuficiente! Disponível: {saldo_disponivel}, Necessário: {quantidade}")
+            # Verificar saldo em USDT para compra
+            saldo = client.get_asset_balance(asset="USDT")
+            saldo_disponivel = float(saldo["free"]) if saldo else 0
+            valor_necessario = VALOR_OPERACAO
+
+            if saldo_disponivel < valor_necessario:
+                logging.error(f"❌ Saldo insuficiente! Disponível: {saldo_disponivel:.2f} USDT, Necessário: {valor_necessario:.2f} USDT")
                 return None
-            logging.info(f"📈 Enviando ordem de COMPRA: {CRIPTO_ATUAL} - {quantidade}")
+            logging.info(f"📈 Enviando ordem de COMPRA: {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
 
         elif tipo_ordem == "sell":
-            logging.info(f"📉 Enviando ordem de VENDA: {CRIPTO_ATUAL} - {quantidade}")
+            # Verificar saldo do ativo base (ex: BTC) para venda
+            ativo = CRIPTO_ATUAL.replace("USDT", "")
+            saldo = client.get_asset_balance(asset=ativo)
+            saldo_disponivel = float(saldo["free"]) if saldo else 0
+
+            if saldo_disponivel < quantidade:
+                logging.error(f"❌ Saldo insuficiente! Disponível: {saldo_disponivel:.6f} {ativo}, Necessário: {quantidade:.6f} {ativo}")
+                return None
+            logging.info(f"📉 Enviando ordem de VENDA: {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
+
+        elif tipo_ordem == "short_sell":
+            # Venda short: usar o saldo em USDT e converter para a quantidade de criptomoeda
+            if preco_atual is None:
+                raise ValueError("Preço atual é necessário para realizar uma venda short.")
+
+            saldo = client.get_asset_balance(asset="USDT")
+            saldo_disponivel = float(saldo["free"]) if saldo else 0
+            valor_necessario = VALOR_OPERACAO
+
+            if saldo_disponivel < valor_necessario:
+                logging.error(f"❌ Saldo insuficiente para VENDA SHORT! Disponível: {saldo_disponivel:.2f} USDT, Necessário: {valor_necessario:.2f} USDT")
+                return None
+
+            quantidade = VALOR_OPERACAO / preco_atual  # Converter USDT para quantidade de criptomoeda
+            logging.info(f"📉 Enviando ordem de VENDA SHORT: {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
+
+        elif tipo_ordem == "short_cover":
+            # Recompra short: verificar saldo do ativo base (ex: BTC)
+            ativo = CRIPTO_ATUAL.replace("USDT", "")
+            saldo = client.get_asset_balance(asset=ativo)
+            saldo_disponivel = float(saldo["free"]) if saldo else 0
+
+            if saldo_disponivel < quantidade:
+                logging.error(f"❌ Saldo insuficiente para RECOMPRA SHORT! Disponível: {saldo_disponivel:.6f} {ativo}, Necessário: {quantidade:.6f} {ativo}")
+                return None
+            logging.info(f"📈 Enviando ordem de RECOMPRA SHORT: {CRIPTO_ATUAL} - Quantidade: {quantidade:.6f}")
 
         # Executa a ordem na Binance
         ordem = client.order_market(symbol=CRIPTO_ATUAL, side=tipo_ordem.upper(), quantity=quantidade)
@@ -306,6 +388,7 @@ def executar_ordem(tipo_ordem, quantidade):
     except Exception as e:
         logging.error(f"❌ Erro ao executar ordem: {e}")
         return None
+
 
 # Executar a lógica principal
 if __name__ == "__main__":
